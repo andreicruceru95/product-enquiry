@@ -1,0 +1,48 @@
+datasets
+transformers>=4.36.0
+# Install PyTorch with CUDA 11.6 support for RTX 3090
+torch>=2.0.0
+sentence-transformers>=2.2.2
+huggingface-hub
+
+# langchain
+langchain>=0.1.0
+langchain-text-splitters
+langchain-community
+langchain-chroma>=0.1.4
+
+# vectorstores - replace faiss-cpu with chromadb
+chromadb>=0.4.24
+llama-index
+
+# ollamation
+ollama
+
+# BGE models and reranker (base version for PoC)
+FlagEmbedding>=1.2.11
+
+# api clients
+openai
+fastapi>=0.104.0
+uvicorn
+pydantic>=2.0.0
+httpx
+
+# Session persistence
+aiosqlite>=0.19.0
+
+# Caching strategies
+redis>=5.0.0
+diskcache>=5.6.3
+
+# Template engine
+jinja2>=3.1.0
+
+# others
+numpy
+pandas
+tqdm
+bs4
+
+# Optional performance improvements
+onnxruntime-gpu>=1.16.0  # GPU-accelerated ONNX runtime
