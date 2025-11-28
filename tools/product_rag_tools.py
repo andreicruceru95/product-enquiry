@@ -169,10 +169,10 @@ class EmbedQueryTool(BaseTool):
     name: str = "embed_query_params"
     description: str = "Generate embeddings for a query string using BGE model"
     args_schema: type = EmbedQueryInput
+    toolkit: ProductRAGToolkit = Field(..., exclude=True)
     
-    def __init__(self, toolkit: ProductRAGToolkit):
-        super().__init__()
-        self.toolkit = toolkit
+    def __init__(self, toolkit: ProductRAGToolkit, **kwargs):
+        super().__init__(toolkit=toolkit, **kwargs)
     
     def _run(self, q: str) -> List[float]:
         """Generate embeddings for the query."""
@@ -203,10 +203,10 @@ class SearchVectorStoreTool(BaseTool):
     name: str = "search_vector_store"
     description: str = "Search the product vector store using embeddings"
     args_schema: type = SearchVectorStoreInput
+    toolkit: ProductRAGToolkit = Field(..., exclude=True)
     
-    def __init__(self, toolkit: ProductRAGToolkit):
-        super().__init__()
-        self.toolkit = toolkit
+    def __init__(self, toolkit: ProductRAGToolkit, **kwargs):
+        super().__init__(toolkit=toolkit, **kwargs)
     
     def _run(self, embeddings: List[float], k: int = 20) -> List[Dict[str, Any]]:
         """Search the vector store with the provided embeddings."""
@@ -250,10 +250,10 @@ class RerankResultsTool(BaseTool):
     name: str = "rerank_results"
     description: str = "Rerank search results using BGE reranker for improved relevance"
     args_schema: type = RerankResultsInput
+    toolkit: ProductRAGToolkit = Field(..., exclude=True)
     
-    def __init__(self, toolkit: ProductRAGToolkit):
-        super().__init__()
-        self.toolkit = toolkit
+    def __init__(self, toolkit: ProductRAGToolkit, **kwargs):
+        super().__init__(toolkit=toolkit, **kwargs)
     
     def _run(self, res: List[str], q: str) -> List[Dict[str, Any]]:
         """Rerank results based on query relevance."""
@@ -354,10 +354,10 @@ class SearchItemByIndexTool(BaseTool):
     name: str = "search_item_by_index"
     description: str = "Find a specific product by its index or ID"
     args_schema: type = SearchItemByIndexInput
+    toolkit: ProductRAGToolkit = Field(..., exclude=True)
     
-    def __init__(self, toolkit: ProductRAGToolkit):
-        super().__init__()
-        self.toolkit = toolkit
+    def __init__(self, toolkit: ProductRAGToolkit, **kwargs):
+        super().__init__(toolkit=toolkit, **kwargs)
     
     def _run(self, idx: str) -> Dict[str, Any]:
         """Search for a product by its index/ID."""
@@ -394,10 +394,10 @@ class SearchSimilarItemsTool(BaseTool):
     name: str = "search_similar_items"
     description: str = "Find products similar to a given query or product"
     args_schema: type = SearchSimilarItemsInput
+    toolkit: ProductRAGToolkit = Field(..., exclude=True)
     
-    def __init__(self, toolkit: ProductRAGToolkit):
-        super().__init__()
-        self.toolkit = toolkit
+    def __init__(self, toolkit: ProductRAGToolkit, **kwargs):
+        super().__init__(toolkit=toolkit, **kwargs)
     
     def _run(self, query: str) -> List[Dict[str, Any]]:
         """Find similar products using semantic search."""
@@ -439,10 +439,10 @@ class CreateQuoteTool(BaseTool):
     name: str = "create_quote"
     description: str = "Generate an HTML quote table for selected products"
     args_schema: type = CreateQuoteInput
+    toolkit: ProductRAGToolkit = Field(..., exclude=True)
     
-    def __init__(self, toolkit: ProductRAGToolkit):
-        super().__init__()
-        self.toolkit = toolkit
+    def __init__(self, toolkit: ProductRAGToolkit, **kwargs):
+        super().__init__(toolkit=toolkit, **kwargs)
     
     def _run(self, products: Dict[str, Any]) -> str:
         """Create an HTML quote from product data."""
@@ -486,10 +486,10 @@ class SendHtmlResponseTool(BaseTool):
     name: str = "send_html_response"
     description: str = "Format a complete HTML response with greeting and end message"
     args_schema: type = SendHtmlResponseInput
+    toolkit: ProductRAGToolkit = Field(..., exclude=True)
     
-    def __init__(self, toolkit: ProductRAGToolkit):
-        super().__init__()
-        self.toolkit = toolkit
+    def __init__(self, toolkit: ProductRAGToolkit, **kwargs):
+        super().__init__(toolkit=toolkit, **kwargs)
     
     def _run(self, response: str) -> str:
         """Format a complete HTML response."""

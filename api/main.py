@@ -8,6 +8,7 @@ import json
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
@@ -17,10 +18,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from langgraph.prebuilt import create_react_agent
-from langchain_classic.memory import ConversationBufferWindowMemory
-from langchain_community.llms import Ollama
-from langchain_core.prompts import PromptTemplate
+from langchain_community.memory import ConversationBufferWindowMemory
+from langchain_ollama import ChatOllama
+from langchain.agents import create_agent
 
 # Import our custom modules
 import sys
@@ -61,13 +61,39 @@ class ProductComparisonRequest(BaseModel):
     product_ids: List[str] = Field(..., description="List of product IDs to compare")
     comparison_criteria: Optional[List[str]] = Field(None, description="Specific criteria to compare")
 
+# Global variables for shared resources
+session_manager: Optional[SessionManager] = None
+agent_executor = None
+rag_tools: List = []
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for startup and shutdown."""
+    # Startup
+    logger.info("Starting Product RAG API...")
+    
+    # Pre-initialize dependencies
+    await get_session_manager()
+    await get_agent_executor()
+    
+    logger.info("Product RAG API ready!")
+    
+    yield
+    
+    # Shutdown
+    global session_manager
+    if session_manager:
+        await session_manager.cleanup_old_sessions()
+    logger.info("Product RAG API shutdown complete")
+
 # FastAPI app initialization
 app = FastAPI(
     title="Product RAG API",
     description="AI-powered product search and quote generation system",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # CORS middleware for web frontend
@@ -79,20 +105,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global variables for shared resources
-session_manager: Optional[SessionManager] = None
-agent_executor = None
-rag_tools: List = []
-
-# Agent prompt template
-REACT_PROMPT = PromptTemplate(
-    input_variables=["input", "agent_scratchpad", "chat_history", "tools", "tool_names"],
-    template="""You are a helpful AI assistant specialized in product search and quote generation for an e-commerce platform.
-
-You have access to the following tools:
-{tools}
-
-Tool names: {tool_names}
+# Agent system message
+SYSTEM_MESSAGE = """You are a helpful AI assistant specialized in product search and quote generation for an e-commerce platform.
 
 When helping users, follow these guidelines:
 1. For product searches, use embed_query_params and search_vector_store tools
@@ -103,18 +117,10 @@ When helping users, follow these guidelines:
 6. Always format final responses using send_html_response tool
 7. Be conversational and helpful while being precise
 
-Previous conversation:
-{chat_history}
-
-Current user input: {input}
-
 Think step by step about what the user needs:
 - If they want product information or quotes, search and rerank results
 - If they need pricing, use the cost computation tools
-- Always end with a well-formatted HTML response
-
-{agent_scratchpad}"""
-)
+- Always end with a well-formatted HTML response"""
 
 # Memory storage for conversations
 conversation_memories: Dict[str, ConversationBufferWindowMemory] = {}
@@ -134,11 +140,11 @@ async def get_agent_executor():
         # Initialize RAG tools
         rag_tools = create_product_rag_tools()
         
-        # Initialize LLM (using Ollama for local deployment)
-        llm = Ollama(model="llama3.1:8b", temperature=0.1)
+        # Initialize LLM (using ChatOllama for local deployment)
+        llm = ChatOllama(model="llama3.1:8b", temperature=0.1)
         
         # Create agent using LangGraph
-        agent_executor = create_react_agent(llm, rag_tools)
+        agent_executor = create_agent(llm, rag_tools, state_modifier=SYSTEM_MESSAGE)
         
         logger.info("Agent executor initialized with RAG tools")
     
@@ -154,24 +160,7 @@ def get_or_create_memory(session_id: str) -> ConversationBufferWindowMemory:
         )
     return conversation_memories[session_id]
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the application on startup."""
-    logger.info("Starting Product RAG API...")
-    
-    # Pre-initialize dependencies
-    await get_session_manager()
-    await get_agent_executor()
-    
-    logger.info("Product RAG API ready!")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    global session_manager
-    if session_manager:
-        await session_manager.cleanup_old_sessions()
-    logger.info("Product RAG API shutdown complete")
+# Lifespan events are now handled by the lifespan context manager above
 
 # API Routes
 

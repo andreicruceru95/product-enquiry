@@ -143,19 +143,19 @@ asyncio.run(init_db())
         logger.info("Building embeddings database...")
         
         build_script = f"""
-import sys
-import os
-sys.path.append({repr(str(self.project_root))})
+            import sys
+            import os
+            sys.path.append({repr(str(self.project_root))})
 
-from database_builder import ProductEmbeddingPipeline
+            from database_builder import ProductEmbeddingPipeline
 
-def main():
-    pipeline = ProductEmbeddingPipeline()
-    pipeline.process_dataset(max_products={max_products})
+            def main():
+                pipeline = ProductEmbeddingPipeline()
+                pipeline.process_dataset(max_products={max_products})
 
-if __name__ == "__main__":
-    main()
-"""
+            if __name__ == "__main__":
+                main()
+        """
         
         try:
             # Run the embedding pipeline
