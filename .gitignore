@@ -176,3 +176,37 @@ Thumbs.db
 .env.local
 .env.production
 config/local_settings.py
+
+# RAG System specific files
+# Vector databases
+chroma_db/
+chromadb/
+*.chromadb
+vectorstore/
+faiss_index/
+
+# Embedding caches
+cache/
+embeddings_cache/
+.cache/
+*.pkl
+*.pickle
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+conversations.db
+
+# Dataset files
+datasets/
+data/
+*.csv
+*.jsonl
+*.parquet
+
+# Model files (if downloaded locally)
+models/
+*.safetensors
+*.bin
+pytorch_model.bin
