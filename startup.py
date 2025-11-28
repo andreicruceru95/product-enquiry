@@ -113,7 +113,8 @@ class ProductRAGStartup:
             init_script = f"""
 import asyncio
 import sys
-sys.path.append('{self.project_root}')
+import os
+sys.path.append({repr(str(self.project_root))})
 
 from database.session_manager import SessionManager
 
@@ -143,7 +144,8 @@ asyncio.run(init_db())
         
         build_script = f"""
 import sys
-sys.path.append('{self.project_root}')
+import os
+sys.path.append({repr(str(self.project_root))})
 
 from database_builder import ProductEmbeddingPipeline
 
@@ -249,7 +251,8 @@ if __name__ == "__main__":
         
         test_script = f"""
 import sys
-sys.path.append('{self.project_root}')
+import os
+sys.path.append({repr(str(self.project_root))})
 
 # Test imports
 try:
