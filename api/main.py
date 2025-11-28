@@ -17,10 +17,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from langchain.agents import create_react_agent, AgentExecutor
-from langchain.memory import ConversationBufferWindowMemory
+from langgraph.prebuilt import create_react_agent
+from langchain_classic.memory import ConversationBufferWindowMemory
 from langchain_community.llms import Ollama
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 # Import our custom modules
 import sys
@@ -81,7 +81,7 @@ app.add_middleware(
 
 # Global variables for shared resources
 session_manager: Optional[SessionManager] = None
-agent_executor: Optional[AgentExecutor] = None
+agent_executor = None
 rag_tools: List = []
 
 # Agent prompt template
@@ -137,15 +137,8 @@ async def get_agent_executor():
         # Initialize LLM (using Ollama for local deployment)
         llm = Ollama(model="llama3.1:8b", temperature=0.1)
         
-        # Create agent
-        agent = create_react_agent(llm, rag_tools, REACT_PROMPT)
-        agent_executor = AgentExecutor(
-            agent=agent,
-            tools=rag_tools,
-            verbose=True,
-            handle_parsing_errors=True,
-            max_iterations=10
-        )
+        # Create agent using LangGraph
+        agent_executor = create_react_agent(llm, rag_tools)
         
         logger.info("Agent executor initialized with RAG tools")
     
@@ -228,7 +221,7 @@ async def chat_message(
     message: ChatMessage,
     background_tasks: BackgroundTasks,
     session_manager: SessionManager = Depends(get_session_manager),
-    agent_executor: AgentExecutor = Depends(get_agent_executor)
+    agent_executor = Depends(get_agent_executor)
 ):
     """
     Main chat endpoint for conversational product queries.
@@ -318,7 +311,7 @@ async def chat_message(
 async def search_products(
     query: str,
     limit: int = 10,
-    agent_executor: AgentExecutor = Depends(get_agent_executor)
+    agent_executor = Depends(get_agent_executor)
 ):
     """
     Direct product search endpoint without conversation context.
@@ -354,7 +347,7 @@ async def search_products(
 @app.post("/compare/products")
 async def compare_products(
     comparison: ProductComparisonRequest,
-    agent_executor: AgentExecutor = Depends(get_agent_executor)
+    agent_executor = Depends(get_agent_executor)
 ):
     """
     Compare multiple products by their IDs.

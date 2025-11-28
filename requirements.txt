@@ -10,6 +10,7 @@ langchain>=0.1.0
 langchain-text-splitters
 langchain-community
 langchain-chroma>=0.1.4
+langchain-core
 
 # vectorstores - replace faiss-cpu with chromadb
 chromadb>=0.4.24

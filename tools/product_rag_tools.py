@@ -12,7 +12,7 @@ from datetime import datetime
 import logging
 
 from langchain.tools import BaseTool
-from langchain.schema import Document
+from langchain_core.documents import Document
 from pydantic import BaseModel, Field
 
 from sentence_transformers import SentenceTransformer
@@ -166,9 +166,9 @@ class ProductRAGToolkit:
 class EmbedQueryTool(BaseTool):
     """Tool to generate embeddings for query parameters."""
     
-    name = "embed_query_params"
-    description = "Generate embeddings for a query string using BGE model"
-    args_schema = EmbedQueryInput
+    name: str = "embed_query_params"
+    description: str = "Generate embeddings for a query string using BGE model"
+    args_schema: type = EmbedQueryInput
     
     def __init__(self, toolkit: ProductRAGToolkit):
         super().__init__()
@@ -200,9 +200,9 @@ class EmbedQueryTool(BaseTool):
 class SearchVectorStoreTool(BaseTool):
     """Tool to search the ChromaDB vector store."""
     
-    name = "search_vector_store"
-    description = "Search the product vector store using embeddings"
-    args_schema = SearchVectorStoreInput
+    name: str = "search_vector_store"
+    description: str = "Search the product vector store using embeddings"
+    args_schema: type = SearchVectorStoreInput
     
     def __init__(self, toolkit: ProductRAGToolkit):
         super().__init__()
@@ -247,9 +247,9 @@ class SearchVectorStoreTool(BaseTool):
 class RerankResultsTool(BaseTool):
     """Tool to rerank search results using BGE reranker."""
     
-    name = "rerank_results"
-    description = "Rerank search results using BGE reranker for improved relevance"
-    args_schema = RerankResultsInput
+    name: str = "rerank_results"
+    description: str = "Rerank search results using BGE reranker for improved relevance"
+    args_schema: type = RerankResultsInput
     
     def __init__(self, toolkit: ProductRAGToolkit):
         super().__init__()
@@ -298,9 +298,9 @@ class RerankResultsTool(BaseTool):
 class ComputeCostTool(BaseTool):
     """Tool to compute total cost for products."""
     
-    name = "compute_cost"
-    description = "Calculate total cost based on price and quantity"
-    args_schema = ComputeCostInput
+    name: str = "compute_cost"
+    description: str = "Calculate total cost based on price and quantity"
+    args_schema: type = ComputeCostInput
     
     def _run(self, price: float, item_numbers: int) -> Dict[str, Any]:
         """Compute cost with potential bulk discounts."""
@@ -351,9 +351,9 @@ class ComputeCostTool(BaseTool):
 class SearchItemByIndexTool(BaseTool):
     """Tool to search for a specific product by index/ID."""
     
-    name = "search_item_by_index"
-    description = "Find a specific product by its index or ID"
-    args_schema = SearchItemByIndexInput
+    name: str = "search_item_by_index"
+    description: str = "Find a specific product by its index or ID"
+    args_schema: type = SearchItemByIndexInput
     
     def __init__(self, toolkit: ProductRAGToolkit):
         super().__init__()
@@ -391,9 +391,9 @@ class SearchItemByIndexTool(BaseTool):
 class SearchSimilarItemsTool(BaseTool):
     """Tool to find similar products."""
     
-    name = "search_similar_items"
-    description = "Find products similar to a given query or product"
-    args_schema = SearchSimilarItemsInput
+    name: str = "search_similar_items"
+    description: str = "Find products similar to a given query or product"
+    args_schema: type = SearchSimilarItemsInput
     
     def __init__(self, toolkit: ProductRAGToolkit):
         super().__init__()
@@ -436,9 +436,9 @@ class SearchSimilarItemsTool(BaseTool):
 class CreateQuoteTool(BaseTool):
     """Tool to create HTML quotes for products."""
     
-    name = "create_quote"
-    description = "Generate an HTML quote table for selected products"
-    args_schema = CreateQuoteInput
+    name: str = "create_quote"
+    description: str = "Generate an HTML quote table for selected products"
+    args_schema: type = CreateQuoteInput
     
     def __init__(self, toolkit: ProductRAGToolkit):
         super().__init__()
@@ -483,9 +483,9 @@ class CreateQuoteTool(BaseTool):
 class SendHtmlResponseTool(BaseTool):
     """Tool to format and send HTML responses."""
     
-    name = "send_html_response"
-    description = "Format a complete HTML response with greeting and end message"
-    args_schema = SendHtmlResponseInput
+    name: str = "send_html_response"
+    description: str = "Format a complete HTML response with greeting and end message"
+    args_schema: type = SendHtmlResponseInput
     
     def __init__(self, toolkit: ProductRAGToolkit):
         super().__init__()
