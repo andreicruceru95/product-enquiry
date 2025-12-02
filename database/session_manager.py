@@ -313,6 +313,81 @@ class SessionManager:
             
             return analysis
     
+    async def delete_conversation(self, session_id: str) -> bool:
+        """Delete a specific conversation and all its messages."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Check if session exists
+            async with db.execute("""
+                SELECT id FROM conversations WHERE session_id = ?
+            """, (session_id,)) as cursor:
+                row = await cursor.fetchone()
+                if not row:
+                    return False
+                
+                conversation_id = row[0]
+            
+            # Delete messages (will cascade to retrieval_analytics and user_feedback)
+            await db.execute("""
+                DELETE FROM messages WHERE conversation_id = ?
+            """, (conversation_id,))
+            
+            # Delete conversation
+            await db.execute("""
+                DELETE FROM conversations WHERE session_id = ?
+            """, (session_id,))
+            
+            await db.commit()
+            logger.info(f"Deleted conversation session: {session_id}")
+            return True
+
+    async def get_conversation(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get conversation details by session ID."""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("""
+                SELECT session_id, user_id, started_at, last_activity, metadata, status
+                FROM conversations 
+                WHERE session_id = ?
+            """, (session_id,)) as cursor:
+                row = await cursor.fetchone()
+                
+                if not row:
+                    return None
+                
+                return {
+                    'session_id': row[0],
+                    'user_id': row[1],
+                    'started_at': row[2],
+                    'last_activity': row[3],
+                    'metadata': json.loads(row[4]) if row[4] else {},
+                    'status': row[5]
+                }
+
+    async def get_conversation_messages(self, session_id: str) -> Optional[List[Dict[str, Any]]]:
+        """Get all messages for a conversation."""
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("""
+                SELECT m.role, m.content, m.timestamp, m.metadata
+                FROM messages m
+                JOIN conversations c ON m.conversation_id = c.id
+                WHERE c.session_id = ?
+                ORDER BY m.timestamp ASC
+            """, (session_id,)) as cursor:
+                rows = await cursor.fetchall()
+                
+                if not rows:
+                    return None
+                
+                messages = []
+                for row in rows:
+                    messages.append({
+                        'role': row[0],
+                        'content': row[1],
+                        'timestamp': row[2],
+                        'metadata': json.loads(row[3]) if row[3] else {}
+                    })
+                
+                return messages
+
     async def cleanup_old_sessions(self, days: int = 30):
         """Clean up old conversation sessions."""
         async with aiosqlite.connect(self.db_path) as db:

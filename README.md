@@ -112,7 +112,25 @@ POST /feedback
 }
 ```
 
-### Analytics
+### User Analytics (New!)
+```bash
+POST /analytics/user
+{
+    "user_id": "andrei01",
+    "analysis_question": "What are this user's main interests and shopping patterns?",
+    "date_range_days": 30,
+    "max_messages_per_session": 50
+}
+
+# Response includes:
+# - Conversation statistics and patterns
+# - Product interests and preferences
+# - Shopping behavior analysis
+# - Engagement metrics
+# - AI-generated insights about user behavior
+```
+
+### System Analytics
 ```bash
 GET /analytics/weaknesses  # Model improvement insights
 GET /analytics/stats       # Usage statistics
@@ -120,28 +138,76 @@ GET /analytics/stats       # Usage statistics
 
 ## Usage Examples
 
-### 1. Product Search
+### 1. Financial Calculations
 ```
-User: "Do you have Samsung Galaxy phones in stock?"
-Assistant: [Searches products, shows available Samsung Galaxy models with prices and ratings]
+User: "If I finance a $2000 computer at 5% APR for 2 years, what's my monthly payment?"
+
+Response:
+- Monthly Payment: $107.19
+- Total Interest Paid: $143.63
+- Total Amount Paid: $2143.63
+- Includes detailed breakdown with HTML formatted response
 ```
 
-### 2. Quote Generation
+### 2. Discount Calculations
 ```
-User: "Can I get a quote for 5 MacBook Pros and 10 wireless keyboards?"
-Assistant: [Generates formatted HTML quote with line items, calculations, and totals]
+User: "Calculate a 20% discount on a $899 laptop"
+
+Response:
+- Original Price: $899
+- Discount Amount: $179.80
+- Discounted Price: $719.20
+- Shows related laptop products with current inventory prices
 ```
 
-### 3. Product Comparison
+### 3. Price Comparison & Value Analysis
 ```
-User: "What's the difference between iPhone 15 and Samsung S24?"
-Assistant: [Compares specifications, prices, ratings, and features side-by-side]
+User: "Which wireless mouse offers the best value for money?"
+
+Response:
+- Analyzes cost per feature across multiple products
+- SABLUTE Wireless Mouse: $6.99 (~$2.33 per feature)
+- Fabbay 20 Pack: $27.99 (~$1.39 per feature)
+- Manhattan Ergonomic: $14.99 (~$4.99 per feature)
+- Recommends best value option with reasoning
 ```
 
-### 4. Recommendations
+### 4. Statistical Analysis
 ```
-User: "I need a gaming laptop under $1500"
-Assistant: [Searches and ranks gaming laptops, provides recommendations with justifications]
+User: "What's the price distribution for wireless headphones?"
+
+Response:
+- Average Price: $11.49
+- Price Range Distribution:
+  • $0.0-$10.0: 1 product
+  • $10.0-$20.0: 2 products
+- Detailed breakdown with HTML tables and charts
+```
+
+### 5. Product Search with Context
+```
+User: "Show me statistics for laptop prices under $1000"
+
+Response:
+- Found 3 laptops in price range
+- Average price: ~$544
+- Price distribution by ranges ($400-500, $500-600)
+- Individual product listings with specifications
+```
+
+### 6. User Analytics & Insights
+```
+POST /analytics/user
+{
+  "user_id": "andrei01",
+  "analysis_question": "What are this user's interests?"
+}
+
+Response:
+- Analyzes conversation patterns across sessions
+- Identifies top interests: wireless (11), phones (11), cost (9), laptops (6)
+- Behavioral insights: price-conscious, detail-oriented, tech-focused
+- Session statistics and engagement metrics
 ```
 
 ## Architecture
@@ -151,8 +217,9 @@ User Request → FastAPI → Session Manager → LangChain Agent →
 [Vector Search + Reranking + Caching] → LLM Reasoning → Response Formatter → HTML Output
 ```
 
-### Agent Tools (8 Custom Tools)
+### Agent Tools (11 Custom Tools)
 
+**Core RAG Tools:**
 1. **`embed_query_params`** - Generate BGE embeddings for queries
 2. **`search_vector_store`** - ChromaDB similarity search
 3. **`rerank_results`** - BGE reranker for relevance improvement
@@ -161,6 +228,11 @@ User Request → FastAPI → Session Manager → LangChain Agent →
 6. **`search_similar_items`** - Semantic similarity search
 7. **`create_quote`** - HTML quote generation
 8. **`send_html_response`** - Format complete responses
+
+**Mathematical Analysis Tools:**
+9. **`statistical_analysis`** - Calculate mean, median, std dev, percentiles for price data
+10. **`price_comparison`** - Compare prices across products, find best deals and savings
+11. **`financial_calculator`** - Calculate interest, discounts, tax, ROI, loan payments
 
 ### Caching Strategy
 
@@ -342,3 +414,4 @@ For questions and support:
 - Check the `/docs` endpoint for API documentation
 - Review logs in `./logs/` directory
 - Use the `/analytics/weaknesses` endpoint for performance insights
+

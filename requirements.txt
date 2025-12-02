@@ -1,9 +1,13 @@
 datasets
 transformers>=4.36.0
-# Install PyTorch with CUDA 11.6 support for RTX 3090
-torch>=2.0.0
+# Install PyTorch with CUDA 12.1 support for RTX 3090
+--index-url https://download.pytorch.org/whl/cu121
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
 sentence-transformers>=2.2.2
 huggingface-hub
+huggingface_hub[hf_xet]
 
 # langchain
 langchain>=0.1.0
@@ -12,6 +16,7 @@ langchain-community
 langchain-chroma>=0.1.4
 langchain-core
 langchain-ollama==1.0.0
+langchain-hub
 
 # vectorstores - replace faiss-cpu with chromadb
 chromadb>=0.4.24

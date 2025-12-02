@@ -526,15 +526,253 @@ class SendHtmlResponseTool(BaseTool):
             logger.error(f"Response formatting error: {e}")
             return f"<div style='color: red;'>Error formatting response: {e}</div>"
 
+# Mathematical Analysis Tools Input Schemas
+class StatisticalAnalysisInput(BaseModel):
+    """Input schema for statistical analysis."""
+    values: List[float] = Field(..., description="List of numerical values to analyze")
+    analysis_type: str = Field("all", description="Type of analysis: all, descriptive, percentiles")
+
+class PriceComparisonInput(BaseModel):
+    """Input schema for price comparison."""
+    prices: List[float] = Field(..., description="List of prices to compare")
+    product_names: List[str] = Field(..., description="List of corresponding product names")
+    comparison_type: str = Field("relative", description="Type: relative, absolute, percentage")
+
+class FinancialCalculatorInput(BaseModel):
+    """Input schema for financial calculations."""
+    principal: float = Field(..., description="Principal amount")
+    calculation_type: str = Field(..., description="Type: interest, discount, tax, roi, depreciation")
+    rate: Optional[float] = Field(None, description="Rate (as decimal, e.g., 0.1 for 10%)")
+    time_period: Optional[int] = Field(None, description="Time period in months/years")
+    additional_params: Optional[Dict[str, Any]] = Field({}, description="Additional parameters")
+
+class StatisticalAnalysisTool(BaseTool):
+    """Tool for statistical analysis of numerical data."""
+    
+    name: str = "statistical_analysis"
+    description: str = "Perform statistical analysis on numerical data (mean, median, std dev, percentiles, etc.)"
+    args_schema: type = StatisticalAnalysisInput
+    
+    def _run(self, values: List[float], analysis_type: str = "all") -> Dict[str, Any]:
+        """Perform statistical analysis."""
+        try:
+            if not values:
+                return {"error": "No values provided"}
+            
+            values_array = np.array(values)
+            
+            # Basic descriptive statistics
+            stats = {
+                "count": len(values),
+                "mean": float(np.mean(values_array)),
+                "median": float(np.median(values_array)),
+                "std_dev": float(np.std(values_array)),
+                "variance": float(np.var(values_array)),
+                "min": float(np.min(values_array)),
+                "max": float(np.max(values_array)),
+                "range": float(np.ptp(values_array)),
+                "sum": float(np.sum(values_array))
+            }
+            
+            if analysis_type in ["all", "percentiles"]:
+                stats.update({
+                    "percentile_25": float(np.percentile(values_array, 25)),
+                    "percentile_50": float(np.percentile(values_array, 50)),
+                    "percentile_75": float(np.percentile(values_array, 75)),
+                    "percentile_90": float(np.percentile(values_array, 90)),
+                    "percentile_95": float(np.percentile(values_array, 95))
+                })
+            
+            # Additional insights
+            stats["coefficient_of_variation"] = stats["std_dev"] / stats["mean"] if stats["mean"] != 0 else 0
+            
+            logger.info(f"Statistical analysis completed for {len(values)} values")
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Statistical analysis error: {e}")
+            return {"error": str(e)}
+
+class PriceComparisonTool(BaseTool):
+    """Tool for comparing prices and finding best deals."""
+    
+    name: str = "price_comparison"
+    description: str = "Compare prices across products and identify best deals, savings, price differences"
+    args_schema: type = PriceComparisonInput
+    
+    def _run(self, prices: List[float], product_names: List[str], 
+             comparison_type: str = "relative") -> Dict[str, Any]:
+        """Compare prices and provide insights."""
+        try:
+            if len(prices) != len(product_names):
+                return {"error": "Number of prices must match number of product names"}
+            
+            if not prices:
+                return {"error": "No prices provided"}
+            
+            # Sort by price
+            sorted_data = sorted(zip(prices, product_names))
+            sorted_prices, sorted_names = zip(*sorted_data)
+            
+            min_price = min(prices)
+            max_price = max(prices)
+            avg_price = sum(prices) / len(prices)
+            
+            comparison = {
+                "cheapest": {
+                    "product": sorted_names[0],
+                    "price": sorted_prices[0]
+                },
+                "most_expensive": {
+                    "product": sorted_names[-1],
+                    "price": sorted_prices[-1]
+                },
+                "average_price": avg_price,
+                "price_range": max_price - min_price,
+                "total_products": len(prices)
+            }
+            
+            # Calculate savings and differences
+            comparisons = []
+            for i, (price, name) in enumerate(zip(prices, product_names)):
+                savings_vs_most_exp = max_price - price
+                diff_vs_avg = price - avg_price
+                diff_vs_cheapest = price - min_price
+                
+                comparisons.append({
+                    "product": name,
+                    "price": price,
+                    "savings_vs_most_expensive": savings_vs_most_exp,
+                    "percentage_vs_most_expensive": (savings_vs_most_exp / max_price) * 100 if max_price > 0 else 0,
+                    "difference_vs_average": diff_vs_avg,
+                    "percentage_vs_average": (diff_vs_avg / avg_price) * 100 if avg_price > 0 else 0,
+                    "difference_vs_cheapest": diff_vs_cheapest,
+                    "percentage_vs_cheapest": (diff_vs_cheapest / min_price) * 100 if min_price > 0 else 0
+                })
+            
+            comparison["detailed_comparisons"] = comparisons
+            
+            logger.info(f"Price comparison completed for {len(prices)} products")
+            return comparison
+            
+        except Exception as e:
+            logger.error(f"Price comparison error: {e}")
+            return {"error": str(e)}
+
+class FinancialCalculatorTool(BaseTool):
+    """Tool for financial calculations like interest, discounts, ROI, etc."""
+    
+    name: str = "financial_calculator"
+    description: str = "Perform financial calculations: interest, discounts, tax, ROI, depreciation, loan payments"
+    args_schema: type = FinancialCalculatorInput
+    
+    def _run(self, principal: float, calculation_type: str, rate: Optional[float] = None,
+             time_period: Optional[int] = None, additional_params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Perform financial calculations."""
+        try:
+            result = {"calculation_type": calculation_type, "principal": principal}
+            
+            if calculation_type == "simple_interest":
+                if rate is None or time_period is None:
+                    return {"error": "Rate and time_period required for interest calculation"}
+                interest = principal * rate * time_period
+                result.update({
+                    "rate": rate,
+                    "time_period": time_period,
+                    "interest": interest,
+                    "total_amount": principal + interest
+                })
+                
+            elif calculation_type == "compound_interest":
+                if rate is None or time_period is None:
+                    return {"error": "Rate and time_period required for compound interest"}
+                compounds_per_period = additional_params.get("compounds_per_period", 1) if additional_params else 1
+                amount = principal * (1 + rate/compounds_per_period) ** (compounds_per_period * time_period)
+                result.update({
+                    "rate": rate,
+                    "time_period": time_period,
+                    "compounds_per_period": compounds_per_period,
+                    "final_amount": amount,
+                    "compound_interest": amount - principal
+                })
+                
+            elif calculation_type == "discount":
+                if rate is None:
+                    return {"error": "Discount rate required"}
+                discount_amount = principal * rate
+                result.update({
+                    "discount_rate": rate,
+                    "discount_amount": discount_amount,
+                    "final_price": principal - discount_amount,
+                    "savings": discount_amount
+                })
+                
+            elif calculation_type == "tax":
+                if rate is None:
+                    return {"error": "Tax rate required"}
+                tax_amount = principal * rate
+                result.update({
+                    "tax_rate": rate,
+                    "tax_amount": tax_amount,
+                    "total_with_tax": principal + tax_amount
+                })
+                
+            elif calculation_type == "roi":
+                if additional_params and "final_value" in additional_params:
+                    final_value = additional_params["final_value"]
+                    roi = (final_value - principal) / principal
+                    result.update({
+                        "initial_investment": principal,
+                        "final_value": final_value,
+                        "roi_decimal": roi,
+                        "roi_percentage": roi * 100,
+                        "profit_loss": final_value - principal
+                    })
+                else:
+                    return {"error": "final_value required in additional_params for ROI calculation"}
+                    
+            elif calculation_type == "loan_payment":
+                if rate is None or time_period is None:
+                    return {"error": "Rate and time_period required for loan payment"}
+                # Monthly payment calculation (PMT formula)
+                monthly_rate = rate / 12
+                num_payments = time_period * 12
+                if monthly_rate == 0:
+                    monthly_payment = principal / num_payments
+                else:
+                    monthly_payment = principal * (monthly_rate * (1 + monthly_rate)**num_payments) / ((1 + monthly_rate)**num_payments - 1)
+                
+                total_paid = monthly_payment * num_payments
+                total_interest = total_paid - principal
+                
+                result.update({
+                    "loan_amount": principal,
+                    "annual_rate": rate,
+                    "loan_term_years": time_period,
+                    "monthly_payment": monthly_payment,
+                    "total_payments": total_paid,
+                    "total_interest": total_interest
+                })
+                
+            else:
+                return {"error": f"Unsupported calculation type: {calculation_type}"}
+            
+            logger.info(f"Financial calculation completed: {calculation_type}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Financial calculation error: {e}")
+            return {"error": str(e)}
+
 def create_product_rag_tools(embedding_model: str = "BAAI/bge-large-en-v1.5",
                            reranker_model: str = "BAAI/bge-reranker-base",
                            chroma_db_path: str = "./chroma_db",
                            cache_dir: str = "./cache") -> List[BaseTool]:
     """
-    Create all 8 Product RAG tools with shared toolkit.
+    Create all Product RAG tools with shared toolkit including mathematical analysis tools.
     
     Returns:
-        List of configured LangChain tools
+        List of configured LangChain tools (11 tools total)
     """
     # Initialize shared toolkit
     toolkit = ProductRAGToolkit(
@@ -544,7 +782,7 @@ def create_product_rag_tools(embedding_model: str = "BAAI/bge-large-en-v1.5",
         cache_dir=cache_dir
     )
     
-    # Create all tools
+    # Create all tools (8 original + 3 mathematical)
     tools = [
         EmbedQueryTool(toolkit),
         SearchVectorStoreTool(toolkit),
@@ -553,10 +791,14 @@ def create_product_rag_tools(embedding_model: str = "BAAI/bge-large-en-v1.5",
         SearchItemByIndexTool(toolkit),
         SearchSimilarItemsTool(toolkit),
         CreateQuoteTool(toolkit),
-        SendHtmlResponseTool(toolkit)
+        SendHtmlResponseTool(toolkit),
+        # Mathematical Analysis Tools
+        StatisticalAnalysisTool(),
+        PriceComparisonTool(),
+        FinancialCalculatorTool()
     ]
     
-    logger.info(f"Created {len(tools)} Product RAG tools")
+    logger.info(f"Created {len(tools)} Product RAG tools (including mathematical analysis)")
     return tools
 
 # Example usage and testing

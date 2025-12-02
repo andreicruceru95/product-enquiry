@@ -18,9 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from langchain_community.memory import ConversationBufferWindowMemory
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_ollama import ChatOllama
-from langchain.agents import create_agent
 
 # Import our custom modules
 import sys
@@ -60,6 +59,23 @@ class UserFeedback(BaseModel):
 class ProductComparisonRequest(BaseModel):
     product_ids: List[str] = Field(..., description="List of product IDs to compare")
     comparison_criteria: Optional[List[str]] = Field(None, description="Specific criteria to compare")
+
+class UserAnalyticsQuery(BaseModel):
+    user_id: str = Field(..., description="User ID to analyze")
+    analysis_question: str = Field(..., description="Specific question about the user's behavior")
+    include_sessions: Optional[List[str]] = Field(None, description="Specific session IDs to analyze")
+    date_range_days: Optional[int] = Field(30, description="Number of days to look back")
+    max_messages_per_session: Optional[int] = Field(50, description="Limit messages per session for token management")
+
+class UserAnalyticsResponse(BaseModel):
+    user_id: str
+    analysis_summary: str
+    statistics: Dict[str, Any]
+    insights: List[str]
+    conversation_topics: List[str]
+    sessions_analyzed: int
+    total_messages: int
+    analysis_timestamp: str
 
 # Global variables for shared resources
 session_manager: Optional[SessionManager] = None
@@ -106,7 +122,7 @@ app.add_middleware(
 )
 
 # Agent system message
-SYSTEM_MESSAGE = """You are a helpful AI assistant specialized in product search and quote generation for an e-commerce platform.
+SYSTEM_MESSAGE = """You are a helpful AI assistant specialized in product search, quote generation, and mathematical analysis for an e-commerce platform.
 
 When helping users, follow these guidelines:
 1. For product searches, use embed_query_params and search_vector_store tools
@@ -114,16 +130,24 @@ When helping users, follow these guidelines:
 3. For quotes, gather product details and use create_quote tool
 4. Use compute_cost tool for pricing calculations with bulk discounts
 5. For similar products, use search_similar_items tool
-6. Always format final responses using send_html_response tool
-7. Be conversational and helpful while being precise
+6. For mathematical analysis, use statistical_analysis, price_comparison, and financial_calculator tools
+7. Always format final responses using send_html_response tool
+8. Be conversational and helpful while being precise
+
+Available Mathematical Tools:
+- statistical_analysis: Calculate mean, median, std dev, percentiles for price analysis
+- price_comparison: Compare prices across products, find best deals and savings
+- financial_calculator: Calculate interest, discounts, tax, ROI, loan payments
 
 Think step by step about what the user needs:
 - If they want product information or quotes, search and rerank results
-- If they need pricing, use the cost computation tools
+- If they need statistical analysis of prices, use statistical_analysis tool
+- If they want to compare prices or find best deals, use price_comparison tool
+- If they need financial calculations, use financial_calculator tool
 - Always end with a well-formatted HTML response"""
 
 # Memory storage for conversations
-conversation_memories: Dict[str, ConversationBufferWindowMemory] = {}
+conversation_memories: Dict[str, List[BaseMessage]] = {}
 
 async def get_session_manager():
     """Dependency to get the session manager."""
@@ -132,6 +156,90 @@ async def get_session_manager():
         session_manager = SessionManager("conversations.db")
         await session_manager.init_database()
     return session_manager
+
+class SimpleRAGAgent:
+    """Simple RAG agent that uses tools directly without LangChain agents framework."""
+    
+    def __init__(self, llm, tools):
+        self.llm = llm
+        self.tools = {tool.name: tool for tool in tools}
+        logger.info(f"Initialized SimpleRAGAgent with tools: {list(self.tools.keys())}")
+        
+    def invoke(self, inputs):
+        """Process user input and execute appropriate tools."""
+        user_message = inputs["input"]
+        chat_history = inputs.get("chat_history", "")
+        
+        # Create a simple prompt that includes tool descriptions
+        tool_descriptions = "\n".join([f"- {name}: {tool.description}" for name, tool in self.tools.items()])
+        
+        prompt = f"""{SYSTEM_MESSAGE}
+
+Available tools:
+{tool_descriptions}
+
+Chat History:
+{chat_history}
+
+User Query: {user_message}
+
+Please help the user with their query. You can use the available tools by mentioning them in your response."""
+        
+        # Get LLM response
+        response = self.llm.invoke(prompt)
+        
+        # Simple tool execution based on keywords in user message
+        intermediate_steps = []
+        
+        # Basic tool routing based on keywords
+        if any(word in user_message.lower() for word in ["search", "find", "product", "laptop", "phone", "headphone", "wireless", "cost", "price"]):
+            try:
+                # Use embed and search tools in sequence
+                embed_tool = self.tools.get("embed_query_params")
+                search_tool = self.tools.get("search_vector_store")
+                
+                if embed_tool and search_tool:
+                    logger.info(f"Found tools - embed_tool: {type(embed_tool)}, search_tool: {type(search_tool)}")
+                    # First embed the query
+                    embeddings = embed_tool._run(user_message)
+                    intermediate_steps.append(("embed_query_params", "Query embedded"))
+                    
+                    # Then search the vector store
+                    search_results = search_tool._run(embeddings, k=5)
+                    intermediate_steps.append(("search_vector_store", f"Found {len(search_results) if isinstance(search_results, list) else 0} results"))
+                    
+                    # Format the search results for the LLM
+                    formatted_results = ""
+                    if isinstance(search_results, list) and search_results:
+                        for i, result in enumerate(search_results[:3], 1):
+                            if isinstance(result, dict):
+                                metadata = result.get("metadata", {})
+                                title = metadata.get("title", "Unknown Product")
+                                price = metadata.get("price", 0)
+                                category = metadata.get("main_category", "")
+                                formatted_results += f"{i}. {title} - ${price} ({category})\n"
+                    
+                    # Update the response with search results
+                    enhanced_prompt = f"""{prompt}
+
+Product Search Results:
+{formatted_results if formatted_results else "No products found matching your query."}
+
+Based on the search results above, please provide a helpful response to the user's query about {user_message}."""
+                    
+                    response = self.llm.invoke(enhanced_prompt)
+                    
+            except Exception as e:
+                logger.error(f"Tool execution error: {e}")
+                intermediate_steps.append(("error", str(e)))
+        
+        # Extract content from response object
+        response_content = response.content if hasattr(response, 'content') else str(response)
+        
+        return {
+            "output": response_content,
+            "intermediate_steps": intermediate_steps
+        }
 
 async def get_agent_executor():
     """Dependency to get the agent executor."""
@@ -143,21 +251,20 @@ async def get_agent_executor():
         # Initialize LLM (using ChatOllama for local deployment)
         llm = ChatOllama(model="llama3.1:8b", temperature=0.1)
         
-        # Create agent using LangGraph
-        agent_executor = create_agent(llm, rag_tools, state_modifier=SYSTEM_MESSAGE)
+        # Create simple agent
+        agent_executor = SimpleRAGAgent(llm, rag_tools)
         
-        logger.info("Agent executor initialized with RAG tools")
+        logger.info("Simple RAG agent initialized with tools")
     
     return agent_executor
 
-def get_or_create_memory(session_id: str) -> ConversationBufferWindowMemory:
+def get_or_create_memory(session_id: str) -> List[BaseMessage]:
     """Get or create conversation memory for a session."""
     if session_id not in conversation_memories:
-        conversation_memories[session_id] = ConversationBufferWindowMemory(
-            k=10,  # Keep last 10 exchanges
-            memory_key="chat_history",
-            return_messages=False
-        )
+        conversation_memories[session_id] = []
+    # Keep only last 20 messages (10 exchanges)
+    if len(conversation_memories[session_id]) > 20:
+        conversation_memories[session_id] = conversation_memories[session_id][-20:]
     return conversation_memories[session_id]
 
 # Lifespan events are now handled by the lifespan context manager above
@@ -222,7 +329,22 @@ async def chat_message(
         # Get or create session
         session_id = message.session_id
         if not session_id:
-            session_id = await session_manager.create_conversation(user_id=message.user_id)
+            # Generate new session ID
+            import uuid
+            session_id = str(uuid.uuid4())
+        
+        # Check if session exists, create if not
+        try:
+            existing_session = await session_manager.get_conversation(session_id)
+        except:
+            existing_session = None
+        
+        if not existing_session:
+            session_id = await session_manager.create_conversation(
+                session_id=session_id, 
+                user_id=message.user_id
+            )
+            logger.info(f"Created new session: {session_id} for user: {message.user_id}")
         
         # Get conversation memory
         memory = get_or_create_memory(session_id)
@@ -236,9 +358,10 @@ async def chat_message(
         )
         
         # Prepare agent input
+        chat_history = "\n".join([f"{msg.type}: {msg.content}" for msg in memory[-10:]])
         agent_input = {
             "input": message.message,
-            "chat_history": memory.buffer
+            "chat_history": chat_history
         }
         
         # Execute agent
@@ -252,10 +375,8 @@ async def chat_message(
         response_content = result.get("output", "I apologize, but I couldn't process your request.")
         
         # Update memory
-        memory.save_context(
-            {"input": message.message},
-            {"output": response_content}
-        )
+        memory.append(HumanMessage(content=message.message))
+        memory.append(AIMessage(content=response_content))
         
         # Add assistant message to session
         assistant_msg_id = await session_manager.add_message(
@@ -265,7 +386,7 @@ async def chat_message(
             metadata={
                 "timestamp": datetime.now().isoformat(),
                 "agent_steps": len(result.get("intermediate_steps", [])),
-                "tools_used": [step[0].tool for step in result.get("intermediate_steps", [])]
+                "tools_used": [step[0] for step in result.get("intermediate_steps", []) if isinstance(step, tuple)]
             },
             performance_metrics={
                 "llm_time_ms": int((agent_end - agent_start) * 1000),
@@ -422,6 +543,247 @@ async def get_session_stats(
         logger.error(f"Stats error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/sessions/create")
+async def create_session(
+    user_id: str,
+    session_id: Optional[str] = None,
+    session_manager: SessionManager = Depends(get_session_manager)
+):
+    """Create a new chat session."""
+    try:
+        if not session_id:
+            import uuid
+            session_id = str(uuid.uuid4())
+        
+        created_session_id = await session_manager.create_conversation(
+            session_id=session_id,
+            user_id=user_id
+        )
+        
+        return {
+            "session_id": created_session_id,
+            "user_id": user_id,
+            "created_at": datetime.now().isoformat(),
+            "message": "Session created successfully"
+        }
+    except Exception as e:
+        logger.error(f"Session creation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/sessions/{session_id}")
+async def get_session(
+    session_id: str,
+    session_manager: SessionManager = Depends(get_session_manager)
+):
+    """Get session information and message history."""
+    try:
+        session = await session_manager.get_conversation(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        
+        messages = await session_manager.get_conversation_messages(session_id)
+        return {
+            "session_id": session_id,
+            "user_id": session.get("user_id"),
+            "created_at": session.get("created_at"),
+            "message_count": len(messages) if messages else 0,
+            "messages": messages or []
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Session retrieval error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/sessions/{session_id}")
+async def delete_session(
+    session_id: str,
+    session_manager: SessionManager = Depends(get_session_manager)
+):
+    """Delete a session and its message history."""
+    try:
+        # Delete the session and all associated messages
+        deleted = await session_manager.delete_conversation(session_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+        
+        return {"message": f"Session {session_id} deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Session deletion error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/analytics/user", response_model=UserAnalyticsResponse)
+async def analyze_user_conversations(
+    query: UserAnalyticsQuery,
+    background_tasks: BackgroundTasks,
+    session_manager: SessionManager = Depends(get_session_manager),
+    agent_executor = Depends(get_agent_executor)
+):
+    """
+    Analyze a user's conversation patterns across multiple sessions.
+    Provides insights on topics, interests, conversation patterns, and more.
+    
+    Example queries:
+    - "What are this user's main product interests?"
+    - "How engaged is this user with the platform?"
+    - "What's this user's typical shopping behavior?"
+    - "Does this user prefer budget or premium products?"
+    """
+    start_time = time.time()
+    
+    try:
+        # Get user's conversations with date filtering
+        user_sessions = await get_user_sessions_with_messages(
+            session_manager, 
+            query.user_id, 
+            query.date_range_days or 30,
+            query.max_messages_per_session or 50
+        )
+        
+        if not user_sessions:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No conversations found for user {query.user_id} in the last {query.date_range_days or 30} days"
+            )
+        
+        # Filter specific sessions if requested
+        if query.include_sessions:
+            user_sessions = [s for s in user_sessions if s['session_id'] in query.include_sessions]
+            if not user_sessions:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"None of the specified sessions found for user {query.user_id}"
+                )
+        
+        # Calculate basic statistics
+        stats = calculate_user_statistics(user_sessions)
+        
+        # Prepare conversation data for LLM analysis (token-managed)
+        conversation_summary = prepare_conversation_summary_for_llm(
+            user_sessions, 
+            max_tokens=3000  # Leave room for analysis prompt and response
+        )
+        
+        # Create analysis prompt
+        analysis_prompt = create_user_analysis_prompt(
+            query.analysis_question,
+            conversation_summary,
+            stats
+        )
+        
+        # Get LLM analysis
+        agent_input = {
+            "input": analysis_prompt,
+            "chat_history": ""
+        }
+        
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, agent_executor.invoke, agent_input
+        )
+        
+        analysis_result = result.get("output", "Analysis could not be completed.")
+        
+        # Extract insights and topics from the analysis
+        insights, topics = extract_insights_and_topics(analysis_result, user_sessions)
+        
+        response = UserAnalyticsResponse(
+            user_id=query.user_id,
+            analysis_summary=analysis_result,
+            statistics=stats,
+            insights=insights,
+            conversation_topics=topics,
+            sessions_analyzed=len(user_sessions),
+            total_messages=sum(len(session['messages']) for session in user_sessions),
+            analysis_timestamp=datetime.now().isoformat()
+        )
+        
+        logger.info(f"User analytics completed for {query.user_id}: {len(user_sessions)} sessions, {response.total_messages} messages")
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"User analytics error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/analytics/user", response_model=UserAnalyticsResponse)
+async def analyze_user_conversations(
+    query: UserAnalyticsQuery,
+    background_tasks: BackgroundTasks,
+    session_manager: SessionManager = Depends(get_session_manager),
+    agent_executor = Depends(get_agent_executor)
+):
+    """
+    Analyze a user's conversation patterns across multiple sessions.
+    Provides insights on topics, interests, conversation patterns, and more.
+    """
+    start_time = time.time()
+    
+    try:
+        # Get user's conversations with date filtering
+        user_sessions = await get_user_sessions_with_messages(
+            session_manager, 
+            query.user_id, 
+            query.date_range_days,
+            query.max_messages_per_session
+        )
+        
+        if not user_sessions:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No conversations found for user {query.user_id}"
+            )
+        
+        # Calculate basic statistics
+        stats = calculate_user_statistics(user_sessions)
+        
+        # Prepare conversation data for LLM analysis
+        conversation_summary = prepare_conversation_summary_for_llm(
+            user_sessions, 
+            max_tokens=3000  # Leave room for analysis prompt
+        )
+        
+        # Create analysis prompt
+        analysis_prompt = create_user_analysis_prompt(
+            query.analysis_question,
+            conversation_summary,
+            stats
+        )
+        
+        # Get LLM analysis
+        agent_input = {
+            "input": analysis_prompt,
+            "chat_history": ""
+        }
+        
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, agent_executor.invoke, agent_input
+        )
+        
+        analysis_result = result.get("output", "Analysis could not be completed.")
+        
+        # Extract insights and topics from the analysis
+        insights, topics = extract_insights_and_topics(analysis_result, user_sessions)
+        
+        return UserAnalyticsResponse(
+            user_id=query.user_id,
+            analysis_summary=analysis_result,
+            statistics=stats,
+            insights=insights,
+            conversation_topics=topics,
+            sessions_analyzed=len(user_sessions),
+            total_messages=sum(len(session['messages']) for session in user_sessions),
+            analysis_timestamp=datetime.now().isoformat()
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"User analytics error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/health")
 async def health_check():
     """
@@ -464,12 +826,19 @@ async def add_retrieval_analytics(
         
         # Extract data from intermediate steps
         for step in intermediate_steps:
-            action, observation = step
-            if action.tool == "search_vector_store" and isinstance(observation, list):
-                for result in observation:
-                    if isinstance(result, dict) and "id" in result:
-                        retrieval_data["product_ids"].append(result["id"])
-                        retrieval_data["embedding_scores"].append(result.get("similarity_score", 0))
+            if isinstance(step, tuple) and len(step) == 2:
+                action, observation = step
+                # action is the tool name string, not an object with .tool attribute
+                if action == "search_vector_store" and isinstance(observation, str):
+                    # For our SimpleRAGAgent, observation is a string description
+                    # We can extract product count info if needed
+                    pass
+                elif hasattr(action, 'tool') and action.tool == "search_vector_store" and isinstance(observation, list):
+                    # This would be for proper LangChain agent format
+                    for result in observation:
+                        if isinstance(result, dict) and "id" in result:
+                            retrieval_data["product_ids"].append(result["id"])
+                            retrieval_data["embedding_scores"].append(result.get("similarity_score", 0))
         
         await session_manager.add_retrieval_analytics(
             message_id=message_id,
@@ -480,6 +849,200 @@ async def add_retrieval_analytics(
         
     except Exception as e:
         logger.error(f"Error adding retrieval analytics: {e}")
+
+# User Analytics Helper Functions
+async def get_user_sessions_with_messages(
+    session_manager: SessionManager, 
+    user_id: str, 
+    days_back: int = 30,
+    max_messages_per_session: int = 50
+) -> List[Dict[str, Any]]:
+    """Get user sessions with messages for analysis."""
+    import aiosqlite
+    from datetime import datetime, timedelta
+    
+    cutoff_date = datetime.now() - timedelta(days=days_back)
+    
+    async with aiosqlite.connect(session_manager.db_path) as db:
+        # Get user sessions within date range
+        async with db.execute("""
+            SELECT session_id, started_at, last_activity, metadata
+            FROM conversations 
+            WHERE user_id = ? AND started_at >= ?
+            ORDER BY started_at DESC
+        """, (user_id, cutoff_date.isoformat())) as cursor:
+            sessions = await cursor.fetchall()
+        
+        user_sessions = []
+        for session in sessions:
+            session_id, started_at, last_activity, metadata = session
+            
+            # Get messages for this session (limited) - use table prefixes to avoid ambiguity
+            async with db.execute("""
+                SELECT m.role, m.content, m.timestamp, m.metadata
+                FROM messages m
+                JOIN conversations c ON m.conversation_id = c.id
+                WHERE c.session_id = ?
+                ORDER BY m.timestamp ASC
+                LIMIT ?
+            """, (session_id, max_messages_per_session)) as cursor:
+                messages = await cursor.fetchall()
+            
+            message_list = []
+            for msg in messages:
+                message_list.append({
+                    'role': msg[0],
+                    'content': msg[1],
+                    'timestamp': msg[2],
+                    'metadata': json.loads(msg[3]) if msg[3] else {}
+                })
+            
+            user_sessions.append({
+                'session_id': session_id,
+                'started_at': started_at,
+                'last_activity': last_activity,
+                'metadata': json.loads(metadata) if metadata else {},
+                'messages': message_list
+            })
+    
+    return user_sessions
+
+def calculate_user_statistics(user_sessions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Calculate basic statistics from user sessions."""
+    total_messages = sum(len(session['messages']) for session in user_sessions)
+    user_messages = sum(1 for session in user_sessions for msg in session['messages'] if msg['role'] == 'user')
+    assistant_messages = sum(1 for session in user_sessions for msg in session['messages'] if msg['role'] == 'assistant')
+    
+    # Calculate session durations (if we have timestamps)
+    session_durations = []
+    for session in user_sessions:
+        if session['messages'] and len(session['messages']) > 1:
+            first_msg = session['messages'][0]['timestamp']
+            last_msg = session['messages'][-1]['timestamp']
+            try:
+                duration = (datetime.fromisoformat(last_msg) - datetime.fromisoformat(first_msg)).total_seconds() / 60
+                session_durations.append(duration)
+            except:
+                pass
+    
+    # Extract common keywords from user messages
+    user_content = ' '.join([msg['content'].lower() for session in user_sessions 
+                            for msg in session['messages'] if msg['role'] == 'user'])
+    
+    # Simple keyword frequency (you could enhance this with NLP)
+    common_words = ['laptop', 'phone', 'headphone', 'price', 'cost', 'cheap', 'expensive', 'wireless', 'gaming']
+    keyword_counts = {word: user_content.count(word) for word in common_words if user_content.count(word) > 0}
+    
+    return {
+        'total_sessions': len(user_sessions),
+        'total_messages': total_messages,
+        'user_messages': user_messages,
+        'assistant_messages': assistant_messages,
+        'avg_messages_per_session': total_messages / len(user_sessions) if user_sessions else 0,
+        'avg_session_duration_minutes': sum(session_durations) / len(session_durations) if session_durations else 0,
+        'keyword_frequencies': keyword_counts,
+        'date_range': {
+            'earliest': min([s['started_at'] for s in user_sessions]) if user_sessions else None,
+            'latest': max([s['last_activity'] for s in user_sessions]) if user_sessions else None
+        }
+    }
+
+def prepare_conversation_summary_for_llm(user_sessions: List[Dict[str, Any]], max_tokens: int = 3000) -> str:
+    """Prepare conversation summary with token management."""
+    summary_parts = []
+    estimated_tokens = 0
+    
+    for i, session in enumerate(user_sessions):
+        session_summary = f"Session {i+1} ({session['started_at'][:10]}):\n"
+        
+        # Add key user messages (sample to stay within token limits)
+        user_messages = [msg for msg in session['messages'] if msg['role'] == 'user']
+        
+        # Take every nth message if too many
+        if len(user_messages) > 10:
+            step = len(user_messages) // 10
+            user_messages = user_messages[::step][:10]
+        
+        for msg in user_messages:
+            content = msg['content'][:200] + "..." if len(msg['content']) > 200 else msg['content']
+            session_summary += f"  User: {content}\n"
+        
+        # Rough token estimation (4 chars per token)
+        session_tokens = len(session_summary) // 4
+        
+        if estimated_tokens + session_tokens > max_tokens:
+            break
+        
+        summary_parts.append(session_summary)
+        estimated_tokens += session_tokens
+    
+    return "\n".join(summary_parts)
+
+def create_user_analysis_prompt(question: str, conversation_summary: str, stats: Dict[str, Any]) -> str:
+    """Create analysis prompt for the LLM."""
+    return f"""Analyze this user's conversation patterns and behavior based on the following data:
+
+USER QUESTION: {question}
+
+CONVERSATION STATISTICS:
+- Total Sessions: {stats['total_sessions']}
+- Total Messages: {stats['total_messages']} (User: {stats['user_messages']}, Assistant: {stats['assistant_messages']})
+- Average Messages per Session: {stats['avg_messages_per_session']:.1f}
+- Average Session Duration: {stats['avg_session_duration_minutes']:.1f} minutes
+- Top Keywords: {stats['keyword_frequencies']}
+- Date Range: {stats['date_range']['earliest']} to {stats['date_range']['latest']}
+
+CONVERSATION SAMPLES:
+{conversation_summary}
+
+Please provide a comprehensive analysis addressing the user's question. Focus on:
+1. User behavior patterns
+2. Product interests and preferences  
+3. Shopping habits and tendencies
+4. Communication style and engagement
+5. Specific insights related to the question asked
+
+Be specific and provide actionable insights based on the conversation data."""
+
+def extract_insights_and_topics(analysis_result: str, user_sessions: List[Dict[str, Any]]) -> tuple:
+    """Extract structured insights and topics from LLM analysis."""
+    # Extract insights (look for bullet points or numbered lists)
+    insights = []
+    lines = analysis_result.split('\n')
+    for line in lines:
+        line = line.strip()
+        if (line.startswith('- ') or line.startswith('• ') or 
+            any(line.startswith(f'{i}.') for i in range(1, 10))):
+            insights.append(line.lstrip('- •0123456789. '))
+    
+    # Extract topics from conversation content
+    all_content = ' '.join([msg['content'].lower() for session in user_sessions 
+                           for msg in session['messages'] if msg['role'] == 'user'])
+    
+    # Simple topic extraction (could be enhanced with NLP)
+    topic_keywords = {
+        'laptops': ['laptop', 'computer', 'pc', 'macbook'],
+        'phones': ['phone', 'smartphone', 'iphone', 'android'],
+        'audio': ['headphone', 'earbuds', 'speaker', 'audio'],
+        'gaming': ['gaming', 'game', 'controller', 'console'],
+        'accessories': ['mouse', 'keyboard', 'cable', 'charger'],
+        'pricing': ['price', 'cost', 'cheap', 'expensive', 'budget', 'deal']
+    }
+    
+    topics = []
+    for topic, keywords in topic_keywords.items():
+        if any(keyword in all_content for keyword in keywords):
+            topics.append(topic)
+    
+    # Fallback insights if none found
+    if not insights:
+        insights = [
+            f"User has {len(user_sessions)} conversation sessions",
+            f"Shows interest in {', '.join(topics) if topics else 'various products'}",
+            "Regular engagement with the platform"
+        ]
+    
+    return insights[:5], topics  # Limit to top 5 insights
 
 # Development server
 if __name__ == "__main__":
